@@ -16,7 +16,15 @@ repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
         stringifier.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
 
-        console.log(removeTasklist(issue.body))
+        const childIssues = [];
+
+        const bodyWithoutTasklists = removeTasklist(issue.body, {
+            beforeTransform(tasklistNode) {
+                childIssues.push(...getChildIssuesUrls(tasklistNode))
+            }
+        })
+
+        console.log(childIssues);
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -130,14 +138,22 @@ async function* getIssuesWithTasklist(octokit, repo) {
 /**
  * Turn tasklists blocks in the given issueBody into plain checklists
  * 
+ * Use the `beforeTransform` callback to process the tasklist node
+ * before it is transformed
+ * 
  * @param {string} issueBody 
+ * @param {RemoveTasklistOptions} options
  * @returns {string} The body of the issue, without
  */
-function removeTasklist(issueBody) {
+function removeTasklist(issueBody, {beforeTransform} = {}) {
     const ast = remark.parse(issueBody);
 
     const tasklists = selectAll('code[lang="[tasklist]"]', ast);
     for(const tasklist of tasklists) {
+        if (beforeTransform) {
+            beforeTransform(tasklist)
+        }
+
         // Use 'html' as a type so remark renders the content of the tasklist as is
         tasklist.type = "html"
         delete tasklist.lang;
@@ -151,4 +167,21 @@ function removeTasklist(issueBody) {
     }
 
     return remark.stringify(ast)
+}
+
+/**
+ * @typedef RemoveTasklistOptions
+ * @property {import('remark').Node[] => void} beforeTransform
+ */
+
+function getChildIssuesUrls(tasklistNode) {
+    const tasklistContent = remark.parse(tasklistNode.value);
+    const itemsText = selectAll('listItem text', tasklistContent);
+    return itemsText
+        // First only consider links to other issues
+        .filter(({value}) => value.match(/issues\/\d+/))
+        // Then tidy up the text, removing the leading `[ ] `
+        // looking for leading non-word characters as the first `[`
+        // may be escaped
+        .map(({value}) => value.replace(/^[^\w]*/,''))
 }
