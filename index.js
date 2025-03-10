@@ -1,22 +1,15 @@
 import { createTokenAuth } from "@octokit/auth-token";
 import { Octokit } from "@octokit/core";
+import { paginateRest } from "@octokit/plugin-paginate-rest";
 
 const {authToken, repositories} = getCLIParameters();
 
 const octokit = await getAuthenticatedOctokit(authToken);
 
-for (const repo of repositories) {
-    const parameters = {
-        owner: "alphagov",
-        repo,
-        // Tasklist public beta started Apr 2023, giving the script a little room for
-        // error https://github.com/github/roadmap/issues/760
-        since: "2023-01-01",
-        state: "all",
-        per_page: 5,
+for (const repository of repositories) {
+    for await (const issue of getIssuesWithTasklist(octokit, repository)) {
+        console.log(issue);
     }
-
-    console.log(await octokit.request("GET /repos/{owner}/{repo}/issues", parameters))
 }
 
 function getCLIParameters() {
@@ -46,5 +39,48 @@ async function getAuthenticatedOctokit(personalAccessToken) {
     const { token } = await auth();
 
     console.info('🏗️ Creating Octokit instance')
-    return new Octokit({ auth: token });
+    const CustomOctokit = Octokit.plugin(paginateRest);
+    return new CustomOctokit({ auth: token });
+}
+
+/**
+ * Yield issues that use tasklist inside the given repo
+ * 
+ * @param {Octokit} octokit 
+ * @param {string} repo 
+ */
+async function* getIssuesWithTasklist(octokit, repo) {
+    console.info('💬 Requesting issues')
+
+    const parameters = {
+        owner: "alphagov",
+        repo,
+        // Tasklist public beta started Apr 2023, giving the script a little room for
+        // error https://github.com/github/roadmap/issues/760
+        since: "2023-01-01",
+        state: "all",
+        per_page: 100,
+    }
+
+    const issuePages = octokit.paginate.iterator(
+        "GET /repos/{owner}/{repo}/issues",
+        parameters,
+    );
+
+    for await (const response of issuePages) {
+        const [_,page] = response.url.match(/&page=(\d+)$/) || [null, 1];
+
+        console.log('Processing page', page)
+        const issues = 
+            response.data
+                // Pull requests are also considered issues on GitHub
+                // so we need to filter those out
+                .filter(issue => !issue.pull_request)
+                // Then we can dig for the issues we're looking for
+                .filter(issue => issue.body?.includes('```[tasklist]'));
+        
+        for (const issue of issues) {
+            yield issue
+        }
+    }
 }

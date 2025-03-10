@@ -10,6 +10,7 @@
   "type": "module",
   "dependencies": {
     "@octokit/auth-token": "^5.1.2",
-    "@octokit/core": "^6.1.4"
+    "@octokit/core": "^6.1.4",
+    "@octokit/plugin-paginate-rest": "^11.4.3"
   }
 }
