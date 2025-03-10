@@ -1,0 +1,1 @@
+console.log(process.env['GITHUB_PAT'], process.argv.slice(2))
