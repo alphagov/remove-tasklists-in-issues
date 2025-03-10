@@ -3,7 +3,7 @@
 GitHub is retiring its tasklist feature on April 30th 2025. 
 Many of our issues have tasklists in their Markdown.
 
-This script uses the GitHub API through [Octokit](https://github.com/octokit/octokit.js) to find issues which use tasklists in their description. 
+This script uses the GitHub API through [Octokit](https://github.com/octokit/octokit.js) to find issues which use tasklists in their description and output them in a CSV (`results/issues.csv`).
 
 Using [remark](https://remark.js.org/), we can then remove the ````[tasklist]` blocks to turn the tasklists into plain checklists.
 

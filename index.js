@@ -1,14 +1,18 @@
 import { createTokenAuth } from "@octokit/auth-token";
 import { Octokit } from "@octokit/core";
 import { paginateRest } from "@octokit/plugin-paginate-rest";
+import { stringify } from 'csv-stringify';
+import { createWriteStream } from 'node:fs';
 
 const {authToken, repositories} = getCLIParameters();
 
 const octokit = await getAuthenticatedOctokit(authToken);
 
+const stringifier = getCSVStringifier("results/issues.csv")
+
 repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
-        console.log(issue);
+        stringifier.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -49,6 +53,32 @@ async function getAuthenticatedOctokit(personalAccessToken) {
     console.info('🏗️ Creating Octokit instance')
     const CustomOctokit = Octokit.plugin(paginateRest);
     return new CustomOctokit({ auth: token });
+}
+
+/**
+ * Creates a WriteableStream that outputs a CSV at the given path
+ * 
+ * @param {string} path 
+ * @returns {WritableStream}
+ */
+function getCSVStringifier(path) {
+    const stringifier = stringify({
+        columns: [
+            'Repository',
+            'Title',
+            'URL',
+            'Created At',
+            'Updated At'
+        ],
+        header: true,
+        // Quote the URLs so they're clearly delimited and the `,` delimiter
+        // is not interpreted as part of the URL
+        quoted_match: /http/
+    });
+    const output = createWriteStream(path);
+    stringifier.pipe(output);
+
+    return stringifier;
 }
 
 /**
