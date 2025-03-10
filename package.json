@@ -7,5 +7,9 @@
   },
   "license": "MIT",
   "private": "true",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@octokit/auth-token": "^5.1.2",
+    "@octokit/core": "^6.1.4"
+  }
 }
