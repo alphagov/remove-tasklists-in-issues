@@ -6,9 +6,17 @@ const {authToken, repositories} = getCLIParameters();
 
 const octokit = await getAuthenticatedOctokit(authToken);
 
-for (const repository of repositories) {
+repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
         console.log(issue);
+
+        if (process.env.FIRST?.toLowerCase() === 'issue') {
+            break repositories;
+        }
+    }
+
+    if (process.env.FIRST?.toLowerCase()?.startsWith('repo')) {
+        break;
     }
 }
 

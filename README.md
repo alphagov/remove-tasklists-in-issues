@@ -15,3 +15,7 @@ The script needs a [Personal Access Token](https://github.com/settings/tokens) w
 npm ci
 GITHUB_PAT=<YOUR_PERSONAL_ACCESS_TOKEN> npm start -- <REPOSITORY_IN_ALPHAGOV_1> <REPOSITORY_IN_ALPHAGOV_2>
 ```
+
+For testing you can use the `FIRST` environment variable to process only:
+- the first issue with `FIRST=issue`
+- the first repository in the list with `FIRST=repo` or `FIRST=repository`
