@@ -10,21 +10,33 @@ const {authToken, repositories} = getCLIParameters();
 
 const octokit = await getAuthenticatedOctokit(authToken);
 
-const stringifier = getCSVStringifier("results/issues.csv")
+const issues = getCSVStringifier("results/issues.csv", {
+    columns: [
+        'Repository',
+        'Title',
+        'URL',
+        'Created At',
+        'Updated At'
+    ]
+})
+const childIssues = getCSVStringifier("results/child-issues.csv", {
+    columns: [
+        'Issue URL',
+        'Child issue URL'
+    ]
+})
 
 repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
-        stringifier.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
-
-        const childIssues = [];
+        issues.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
 
         const bodyWithoutTasklists = removeTasklist(issue.body, {
             beforeTransform(tasklistNode) {
-                childIssues.push(...getChildIssuesUrls(tasklistNode))
+                for (const childIssueUrl of getChildIssuesUrls(tasklistNode)) {
+                    childIssues.write([issue.html_url, childIssueUrl])
+                }
             }
         })
-
-        console.log(childIssues);
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -73,19 +85,13 @@ async function getAuthenticatedOctokit(personalAccessToken) {
  * @param {string} path 
  * @returns {WritableStream}
  */
-function getCSVStringifier(path) {
+function getCSVStringifier(path, stringifyOptions) {
     const stringifier = stringify({
-        columns: [
-            'Repository',
-            'Title',
-            'URL',
-            'Created At',
-            'Updated At'
-        ],
         header: true,
         // Quote the URLs so they're clearly delimited and the `,` delimiter
         // is not interpreted as part of the URL
-        quoted_match: /http/
+        quoted_match: /http/,
+        ...stringifyOptions
     });
     const output = createWriteStream(path);
     stringifier.pipe(output);
