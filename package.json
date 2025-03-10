@@ -12,6 +12,8 @@
     "@octokit/auth-token": "^5.1.2",
     "@octokit/core": "^6.1.4",
     "@octokit/plugin-paginate-rest": "^11.4.3",
-    "csv-stringify": "^6.5.2"
+    "csv-stringify": "^6.5.2",
+    "remark": "^15.0.1",
+    "unist-util-select": "^5.1.0"
   }
 }

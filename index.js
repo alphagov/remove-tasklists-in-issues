@@ -3,6 +3,8 @@ import { Octokit } from "@octokit/core";
 import { paginateRest } from "@octokit/plugin-paginate-rest";
 import { stringify } from 'csv-stringify';
 import { createWriteStream } from 'node:fs';
+import { remark } from "remark";
+import { selectAll } from "unist-util-select";
 
 const {authToken, repositories} = getCLIParameters();
 
@@ -13,6 +15,8 @@ const stringifier = getCSVStringifier("results/issues.csv")
 repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
         stringifier.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
+
+        console.log(removeTasklist(issue.body))
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -121,4 +125,30 @@ async function* getIssuesWithTasklist(octokit, repo) {
             yield issue
         }
     }
+}
+
+/**
+ * Turn tasklists blocks in the given issueBody into plain checklists
+ * 
+ * @param {string} issueBody 
+ * @returns {string} The body of the issue, without
+ */
+function removeTasklist(issueBody) {
+    const ast = remark.parse(issueBody);
+
+    const tasklists = selectAll('code[lang="[tasklist]"]', ast);
+    for(const tasklist of tasklists) {
+        // Use 'html' as a type so remark renders the content of the tasklist as is
+        tasklist.type = "html"
+        delete tasklist.lang;
+
+        // Properly escape the leading `[` of the checklists now they're out of code blocks
+        // GitHub likely does a fair job of normalising the tasklists to not have whitespace
+        // before the `-` and use a `-` (not a `*` or `+`), but in case.
+        // We need the `g` flag for `replaceAll` as well as the `m` so each line is considered
+        // independently here
+        tasklist.value = tasklist.value.replaceAll(/^\s*[+*-] \[/gm,'- \\[')
+    }
+
+    return remark.stringify(ast)
 }
