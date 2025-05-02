@@ -25,6 +25,12 @@ const childIssues = getCSVStringifier("results/child-issues.csv", {
         'Child issue URL'
     ]
 })
+const updateErrors = getCSVStringifier("results/errors.csv", {
+    columns: [
+        'Issue URL',
+        'Error message'
+    ]
+})
 
 repositories: for (const repository of repositories) {
     for await (const issue of getIssuesWithTasklist(octokit, repository)) {
@@ -37,6 +43,14 @@ repositories: for (const repository of repositories) {
                 }
             }
         })
+
+        if (process.env.UPDATE !== 'false') {
+            try {
+                updateIssueBody(octokit, issue, bodyWithoutTasklists)
+            } catch (error) {
+                updateErrors.write([issue.html_url, error.message])
+            }
+        }
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -190,4 +204,10 @@ function getChildIssuesUrls(tasklistNode) {
         // looking for leading non-word characters as the first `[`
         // may be escaped
         .map(({value}) => value.replace(/^[^\w]*/,''))
+}
+
+function updateIssueBody(octokit, issue, body) {
+    return octokit.request(`PATCH ${issue.url}`, {
+        body
+    })
 }
