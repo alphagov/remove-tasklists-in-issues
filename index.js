@@ -3,8 +3,6 @@ import { Octokit } from "@octokit/core";
 import { paginateRest } from "@octokit/plugin-paginate-rest";
 import { stringify } from 'csv-stringify';
 import { createWriteStream } from 'node:fs';
-import { remark } from "remark";
-import { selectAll } from "unist-util-select";
 
 const {authToken, repositories} = getCLIParameters();
 
@@ -12,45 +10,21 @@ const octokit = await getAuthenticatedOctokit(authToken);
 
 const issues = getCSVStringifier("results/issues.csv", {
     columns: [
-        'Repository',
-        'Title',
-        'URL',
-        'Created At',
-        'Updated At'
-    ]
-})
-const childIssues = getCSVStringifier("results/child-issues.csv", {
-    columns: [
-        'Issue URL',
-        'Child issue URL'
-    ]
-})
-const updateErrors = getCSVStringifier("results/errors.csv", {
-    columns: [
-        'Issue URL',
-        'Error message'
+        'Issue',
+        'Priority',
+        'Complexity',
+        'Work on it',
+        'Priority',
+        'Complexity',
+        'Work on it'
     ]
 })
 
 repositories: for (const repository of repositories) {
-    for await (const issue of getIssuesWithTasklist(octokit, repository)) {
-        issues.write([repository, issue.title, issue.html_url, issue.created_at, issue.updated_at])
-
-        const bodyWithoutTasklists = removeTasklist(issue.body, {
-            beforeTransform(tasklistNode) {
-                for (const childIssueUrl of getChildIssuesUrls(tasklistNode)) {
-                    childIssues.write([issue.html_url, childIssueUrl])
-                }
-            }
-        })
-
-        if (process.env.UPDATE !== 'false') {
-            try {
-                updateIssueBody(octokit, issue, bodyWithoutTasklists)
-            } catch (error) {
-                updateErrors.write([issue.html_url, error.message])
-            }
-        }
+    for await (const issue of getIssuesMatchingFilter(octokit, repository, (issue) => issue.pull_request)) {
+        // Escape quotes for the title
+        const sheetsReadyTitle = issue.title.replaceAll('"','""')
+        issues.write([`=HYPERLINK("${issue.html_url}", "${sheetsReadyTitle}")`])
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -114,12 +88,13 @@ function getCSVStringifier(path, stringifyOptions) {
 }
 
 /**
- * Yield issues that use tasklist inside the given repo
+ * Yield issues that match the given filter
  * 
  * @param {Octokit} octokit 
  * @param {string} repo 
+ * @param {function} filter
  */
-async function* getIssuesWithTasklist(octokit, repo) {
+async function* getIssuesMatchingFilter(octokit, repo, filter) {
     console.info('💬 Requesting issues')
 
     const parameters = {
@@ -143,71 +118,10 @@ async function* getIssuesWithTasklist(octokit, repo) {
         console.log('Processing page', page)
         const issues = 
             response.data
-                // Pull requests are also considered issues on GitHub
-                // so we need to filter those out
-                .filter(issue => !issue.pull_request)
-                // Then we can dig for the issues we're looking for
-                .filter(issue => issue.body?.includes('```[tasklist]'));
+                .filter(filter)
         
         for (const issue of issues) {
             yield issue
         }
     }
-}
-
-/**
- * Turn tasklists blocks in the given issueBody into plain checklists
- * 
- * Use the `beforeTransform` callback to process the tasklist node
- * before it is transformed
- * 
- * @param {string} issueBody 
- * @param {RemoveTasklistOptions} options
- * @returns {string} The body of the issue, without
- */
-function removeTasklist(issueBody, {beforeTransform} = {}) {
-    const ast = remark.parse(issueBody);
-
-    const tasklists = selectAll('code[lang="[tasklist]"]', ast);
-    for(const tasklist of tasklists) {
-        if (beforeTransform) {
-            beforeTransform(tasklist)
-        }
-
-        // Use 'html' as a type so remark renders the content of the tasklist as is
-        tasklist.type = "html"
-        delete tasklist.lang;
-
-        // Properly escape the leading `[` of the checklists now they're out of code blocks
-        // GitHub likely does a fair job of normalising the tasklists to not have whitespace
-        // before the `-` and use a `-` (not a `*` or `+`), but in case.
-        // We need the `g` flag for `replaceAll` as well as the `m` so each line is considered
-        // independently here
-        tasklist.value = tasklist.value.replaceAll(/^\s*[+*-] \[/gm,'- \\[')
-    }
-
-    return remark.stringify(ast)
-}
-
-/**
- * @typedef RemoveTasklistOptions
- * @property {import('remark').Node[] => void} beforeTransform
- */
-
-function getChildIssuesUrls(tasklistNode) {
-    const tasklistContent = remark.parse(tasklistNode.value);
-    const itemsText = selectAll('listItem text', tasklistContent);
-    return itemsText
-        // First only consider links to other issues
-        .filter(({value}) => value.match(/issues\/\d+/))
-        // Then tidy up the text, removing the leading `[ ] `
-        // looking for leading non-word characters as the first `[`
-        // may be escaped
-        .map(({value}) => value.replace(/^[^\w]*/,''))
-}
-
-function updateIssueBody(octokit, issue, body) {
-    return octokit.request(`PATCH ${issue.url}`, {
-        body
-    })
 }
