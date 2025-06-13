@@ -4,27 +4,75 @@ import { paginateRest } from "@octokit/plugin-paginate-rest";
 import { stringify } from 'csv-stringify';
 import { createWriteStream } from 'node:fs';
 
+/////////////////
+/// Configuration
+/////////////////
+
+/**
+ * The columns that'll be output in the CSV
+ */
+const CSV_COLUMNS = [
+    'Issue',
+    'Priority',
+    'Complexity',
+    'Work on it',
+    'Priority',
+    'Complexity',
+    'Work on it'
+]
+
+/**
+ * Filter the issues that'll be included in the CSV
+ * @param {Object} issue 
+ * @returns {boolean}
+ */
+function filterIssues(issue) {
+    return issue.state !== 'closed' && !issue.pull_request
+}
+
+/**
+ * Converts the issue to CSV columns
+ * 
+ * @param {Object} issue 
+ * @returns {Array<any>}
+ */
+function toCSVColumns(issue) {
+    // Escape quotes for the title
+    const sheetsReadyTitle = issue.title.replaceAll('"','""')
+    return [`=HYPERLINK("${issue.html_url}", "${sheetsReadyTitle}")`]
+}
+
+/**
+ * Parameters provided to Octokit when fetching the issues/PRs
+ */
+const API_PARAMETERS = {
+    owner: "alphagov",
+    per_page: 100,
+}
+
+/**
+ * The endpoint Oktokit should hit to grab a list of issues or pull requests
+ * 
+ * @type {'issues'|'pulls'}
+ */
+const ENDPOINT = 'issues'
+
+///////////////////
+/// Doing the work
+///////////////////
+
 const {authToken, repositories} = getCLIParameters();
 
 const octokit = await getAuthenticatedOctokit(authToken);
 
 const issues = getCSVStringifier("results/issues.csv", {
-    columns: [
-        'Issue',
-        'Priority',
-        'Complexity',
-        'Work on it',
-        'Priority',
-        'Complexity',
-        'Work on it'
-    ]
+    columns: CSV_COLUMNS
 })
 
 repositories: for (const repository of repositories) {
-    for await (const issue of getIssuesMatchingFilter(octokit, repository, (issue) => issue.pull_request)) {
-        // Escape quotes for the title
-        const sheetsReadyTitle = issue.title.replaceAll('"','""')
-        issues.write([`=HYPERLINK("${issue.html_url}", "${sheetsReadyTitle}")`])
+    for await (const issue of getIssuesMatchingFilter(octokit, repository, filterIssues)) {
+        
+        issues.write(toCSVColumns(issue))
 
         if (process.env.FIRST?.toLowerCase() === 'issue') {
             break repositories;
@@ -35,6 +83,10 @@ repositories: for (const repository of repositories) {
         break;
     }
 }
+
+/////////////
+/// Internals
+/////////////
 
 function getCLIParameters() {
     const authToken = process.env['GITHUB_PAT'];
@@ -98,17 +150,12 @@ async function* getIssuesMatchingFilter(octokit, repo, filter) {
     console.info('💬 Requesting issues')
 
     const parameters = {
-        owner: "alphagov",
-        repo,
-        // Tasklist public beta started Apr 2023, giving the script a little room for
-        // error https://github.com/github/roadmap/issues/760
-        since: "2023-01-01",
-        state: "all",
-        per_page: 100,
+        ...API_PARAMETERS,
+        repo
     }
 
     const issuePages = octokit.paginate.iterator(
-        "GET /repos/{owner}/{repo}/issues",
+        `GET /repos/{owner}/{repo}/${ENDPOINT}`,
         parameters,
     );
 
